@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>ferrosdr</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -397,13 +397,13 @@ select option { background: #0c0c1c; color: #e0e0ff; }
   #scan-btn  { min-width: 60px; width: 60px; }
   #gear-btn  { font-size: 11px; padding: 2px 8px; letter-spacing: 1px; }
 
-  /* Spectrum takes 50% of remaining viewport height (below status bar) */
+  /* Spectrum: reduced to ~42vh to push panel content higher on screen */
   #display {
-    flex: 1 1 0;
+    flex: 0 0 42vh;
     min-height: 0;
   }
 
-  /* Panel takes equal 50% of remaining viewport height */
+  /* Panel fills all remaining space including safe area for Android nav bar */
   #panel {
     flex: 1 1 0;
     min-height: 0;
@@ -420,8 +420,12 @@ select option { background: #0c0c1c; color: #e0e0ff; }
     display: flex !important;
     border-top: 2px solid #28285a;
   }
-  /* Panel body scrolls internally within its allocated space */
-  #panel-body { overflow-y: auto; }
+  /* Panel body: 120px bottom padding ensures SAVE button clears Android nav bar
+     on all devices regardless of DPR or nav bar style. */
+  #panel-body {
+    overflow-y: auto;
+    padding-bottom: max(120px, env(safe-area-inset-bottom, 120px));
+  }
 
   .fields-grid { grid-template-columns: 1fr; }
   /* Hide close button — panel is always open on mobile */
@@ -577,8 +581,8 @@ select option { background: #0c0c1c; color: #e0e0ff; }
         </div>
       </div>
     </div>
-<div id="markers-list" style="margin-bottom:0;"></div>
-    </div>
+
+    <div id="markers-list" style="margin-bottom:0;"></div>
 
     <button id="save-btn" onclick="saveCurrentProfile()">💾 SAVE</button>
 
@@ -1009,10 +1013,7 @@ function refreshMarkersList() {
   const list    = document.getElementById('markers-list');
   const markers = profiles[currentProfile]?.markers || [];
   list.innerHTML = '';
-  if (markers.length === 0) {
-    list.innerHTML = '<div style="color:#444466; font-size:10px;">No custom markers</div>';
-    return;
-  }
+  if (markers.length === 0) return; // nothing to show — no "No custom markers" text
   markers.forEach(m => {
     const div  = document.createElement('div');
     div.style  = 'display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;';
