@@ -1,0 +1,1527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ferrosdr</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #090910;
+  color: #c8c8e0;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 12px;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* ── Status bar ──────────────────────────────────────────────────────────── */
+#status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 32px;
+  padding: 0 10px;
+  background: #0d0d1a;
+  border-bottom: 1px solid #1c1c30;
+  flex-shrink: 0;
+  gap: 8px;
+}
+#status-left {
+  color: #6666aa;
+  letter-spacing: 2px;
+  font-size: 13px;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+#freq-display {
+  color: #88bbff;
+  font-weight: bold;
+  letter-spacing: 1px;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+/* Demod mode buttons */
+#demod-btns {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+  justify-content: center;
+  align-items: center;
+}
+.demod-btn {
+  background: #12122a;
+  border: 1px solid #252545;
+  color: #8888bb;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  font-weight: bold;
+  padding: 3px 10px;
+  cursor: pointer;
+  border-radius: 3px;
+  letter-spacing: 1px;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.demod-btn:hover  { background: #1a1a3a; color: #ccccff; border-color: #4444aa; }
+.demod-btn.active { background: #1a1a50; color: #88aaff; border-color: #4455cc; }
+#demod-off        { color: #555588; border-color: #1a1a30; }
+#demod-off:hover  { color: #cc4444; border-color: #442222; background: #1a1010; }
+
+#status-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+/* Fixed width so scanning/freq text never causes buttons to shift */
+#demod-freq {
+  color: #88aacc;
+  font-size: 11px;
+  width: 230px;
+  flex-shrink: 0;
+  text-align: right;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+#mute-btn {
+  background: #12122a;
+  border: 1px solid #252545;
+  color: #88aacc;
+  font-size: 15px;
+  cursor: pointer;
+  padding: 2px 7px;
+  border-radius: 3px;
+  line-height: 1.4;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+#mute-btn:hover  { background: #1a1a3a; border-color: #4444aa; }
+#mute-btn.muted  { color: #cc4444; border-color: #442222; background: #1a1010; }
+#gear-btn {
+  background: #0e3a0e;
+  border: 2px solid #2a8a2a;
+  color: #44ff44;
+  font-size: 13px;
+  font-weight: bold;
+  letter-spacing: 2px;
+  cursor: pointer;
+  padding: 3px 14px;
+  border-radius: 4px;
+  line-height: 1.5;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+#gear-btn:hover { background: #154a15; border-color: #44cc44; color: #88ff88; }
+
+/* ── Main display ────────────────────────────────────────────────────────── */
+#display {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  cursor: crosshair;
+}
+#spectrum-canvas  { flex: 0 0 22%; width: 100%; display: block; }
+#waterfall-canvas { flex: 1;       width: 100%; display: block; }
+
+/* ── Settings panel — flush bottom-right, landscape format ───────────────── */
+#panel {
+  position: fixed;
+  bottom: 0;
+  right: 0;
+  width: 480px;
+  max-height: calc(100vh - 40px);
+  background: #0c0c1c;
+  border: 1px solid #28285a;
+  border-radius: 6px 0 0 0;   /* only top-left corner rounded — flush to edges */
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  transform: translateX(calc(100% + 4px));
+  transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+  box-shadow: -4px -4px 24px rgba(0,0,0,0.8);
+}
+#panel.open { transform: translateX(0); }
+
+#panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 7px 14px;
+  background: #09091a;
+  border-bottom: 1px solid #22224a;
+  flex-shrink: 0;
+}
+#panel-title {
+  color: #44ff44;
+  font-size: 13px;
+  font-weight: bold;
+  letter-spacing: 0.5px;
+  line-height: 1.4;
+}
+#panel-close {
+  background: #1a1a3a;
+  border: 1px solid #33335a;
+  color: #aaaadd;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 3px 8px;
+  border-radius: 3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+#panel-close:hover { background: #aa2222; border-color: #dd3333; color: #ffffff; }
+
+#panel-body {
+  overflow-y: auto;
+  padding: 8px 14px;
+  scrollbar-width: thin;
+  scrollbar-color: #333366 #09091a;
+}
+
+/* Two-column grid for form sections — landscape layout */
+.fields-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 12px;
+}
+.fields-grid .field { margin-bottom: 5px; }
+
+.sec {
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #1a1a3a;
+}
+.sec:last-child { border-bottom: none; margin-bottom: 0; }
+.sec-title {
+  font-size: 9px;
+  letter-spacing: 2.5px;
+  color: #6677bb;
+  text-transform: uppercase;
+  margin-bottom: 5px;
+  font-weight: bold;
+}
+.field { margin-bottom: 5px; }
+.field label {
+  display: block;
+  color: #aaaadd;
+  font-size: 10px;
+  margin-bottom: 2px;
+}
+input[type="number"],
+input[type="text"],
+select {
+  width: 100%;
+  background: #090918;
+  border: 1px solid #2a2a55;
+  color: #e0e0ff;
+  padding: 5px 7px;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  border-radius: 3px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+input:focus, select:focus { border-color: #5555bb; }
+select option { background: #0c0c1c; color: #e0e0ff; }
+
+/* ── Mobile responsive ───────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  /* Let body scroll vertically so panel appears below display */
+  body {
+    height: auto;
+    min-height: 100vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  /* Display takes exactly the viewport height minus status bar — scrolls away */
+  #display {
+    height: calc(100vh - 32px);
+    flex-shrink: 0;
+    flex: none;
+  }
+  /* Panel is in normal document flow below the display — no fixed positioning */
+  #panel {
+    position: static;
+    width: 100%;
+    max-height: none;
+    height: auto;
+    transform: none !important;
+    transition: none;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    box-shadow: none;
+    display: none;    /* hidden until opened */
+    border-top: 2px solid #28285a;
+  }
+  #panel.open {
+    display: flex;    /* slide into flow — no animation needed */
+  }
+  .fields-grid { grid-template-columns: 1fr; }
+  #demod-freq { width: 140px; }
+  #status-left { display: none; }
+}
+
+.row { display: flex; gap: 5px; margin-bottom: 6px; }
+.row > * { flex: 1; }
+.row > button { flex: 0 0 auto; }
+
+.btn {
+  background: #14143a;
+  border: 1px solid #2a2a5a;
+  color: #aaaaee;
+  padding: 5px 9px;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  cursor: pointer;
+  border-radius: 3px;
+  white-space: nowrap;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.btn:hover { background: #1e1e55; color: #ddddff; border-color: #4444aa; }
+.btn.danger { color: #dd8888; border-color: #3a2222; }
+.btn.danger:hover { background: #2a1010; color: #ff6666; border-color: #883333; }
+
+#scan-btn {
+  min-width: 76px;
+  width: 76px;
+  text-align: center;
+}
+#scan-mode-btn {
+  min-width: 38px;
+  width: 38px;
+  text-align: center;
+}
+#wb-ctrl {
+  /* Fixed pixel width always reserves space — buttons never shift.
+     Opacity toggle hides/shows without affecting layout. */
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 4px;
+  width: 88px;
+  flex-shrink: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.1s;
+}
+#sql-ctrl {
+  /* Same fixed-width approach as wb-ctrl — prevents layout shift when
+     NBFM/AM mode is activated. */
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+  width: 96px;
+  flex-shrink: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.1s;
+}
+#add-marker-btn {
+  opacity: 0;
+  pointer-events: none;
+  background: #1a1a0a;
+  border: 1px solid #555520;
+  color: #dddd44;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 1px 7px;
+  border-radius: 3px;
+  margin-left: 4px;
+  transition: opacity 0.1s, background 0.12s;
+}
+#add-marker-btn:hover { background: #2a2a10; }
+#save-btn {
+  width: 100%;
+  margin-top: 10px;
+  padding: 9px;
+  background: #0e2e0e;
+  border: 1px solid #2a6a2a;
+  color: #55ee55;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  font-weight: bold;
+  letter-spacing: 2px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+#save-btn:hover  { background: #153315; border-color: #3a8a3a; color: #77ff77; }
+#save-btn:active { background: #0a220a; }
+
+/* -- Mobile responsive ---------------------------------------------------- */
+/* Split-screen: status bar + spectrum (55vh) + panel (rest).
+   Nothing scrolls at body level — panel-body scrolls internally.
+   Status bar and SETTINGS button are always on screen. */
+@media (max-width: 600px) {
+  body {
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  /* Two-row status bar, always at top */
+  #status-bar {
+    height: auto;
+    flex-wrap: wrap;
+    padding: 4px 6px;
+    gap: 4px;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 10;
+  }
+  #status-left  { display: none; }
+  #freq-display { flex: 1; font-size: 13px; }
+  #status-right { gap: 5px; }
+  #demod-freq   { display: none; }
+  /* Demod buttons wrap to second row */
+  #demod-btns {
+    order: 10;
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 3px;
+  }
+  .demod-btn { padding: 3px 7px; font-size: 10px; }
+  #scan-btn  { min-width: 60px; width: 60px; }
+  #gear-btn  { font-size: 11px; padding: 2px 8px; letter-spacing: 1px; }
+
+  /* Spectrum takes 50% of remaining viewport height (below status bar) */
+  #display {
+    flex: 1 1 0;
+    min-height: 0;
+  }
+
+  /* Panel takes equal 50% of remaining viewport height */
+  #panel {
+    flex: 1 1 0;
+    min-height: 0;
+    position: static;
+    width: 100%;
+    max-height: none;
+    transform: none !important;
+    transition: none;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    box-shadow: none;
+    display: flex !important;
+    border-top: 2px solid #28285a;
+  }
+  /* Panel body scrolls internally within its allocated space */
+  #panel-body { overflow-y: auto; }
+
+  .fields-grid { grid-template-columns: 1fr; }
+  /* Hide close button — panel is always open on mobile */
+  #panel-close { display: none; }
+}
+</style>
+</head>
+<body>
+
+<div id="status-bar">
+  <span id="status-left">FERROSDR</span>
+  <span id="freq-display">— MHz</span>
+
+  <div id="demod-btns">
+    <button class="demod-btn" id="btn-nbfm" onclick="setDemod('NBFM')">NBFM</button>
+    <button class="demod-btn" id="btn-wbfm" onclick="setDemod('WBFM')">WBFM</button>
+    <button class="demod-btn" id="btn-am"   onclick="setDemod('AM')"  >AM</button>
+    <button class="demod-btn" id="demod-off" onclick="setDemod(null)"  >OFF</button>
+    <button class="demod-btn" id="scan-btn" onclick="toggleScan()">◉ SCAN</button>
+    <button class="demod-btn" id="scan-mode-btn" onclick="toggleScanMode()" title="CH: scan channel markers only  WB: scan all bins">CH</button>
+    <span id="wb-ctrl" style="align-items:center; gap:3px; margin-left:2px;">
+      <span style="color:#88aacc; font-size:11px;">+</span>
+      <input type="number" id="wb-margin-val" value="12" min="3" max="40" step="1" style="
+        width:38px; background:#0a1a2a; border:1px solid #224466;
+        color:#88ccff; font-family:'Courier New',monospace; font-size:11px;
+        padding:2px 3px; border-radius:3px; outline:none; text-align:right;"
+        title="Wideband scan margin above noise floor (dB)">
+      <span style="color:#88aacc; font-size:11px;">dB</span>
+    </span>
+    <span id="sql-ctrl">
+      <span style="color:#cc5555; font-size:11px; letter-spacing:1px;">SQL</span>
+      <input type="number" id="sql-val" step="1" style="
+        width:52px; background:#12122a; border:1px solid #552222;
+        color:#ff8888; font-family:'Courier New',monospace; font-size:11px;
+        padding:2px 4px; border-radius:3px; outline:none; text-align:right;"
+        onchange="setSquelchFromInput()" oninput="setSquelchFromInput()">
+      <span style="color:#cc5555; font-size:11px;">dB</span>
+    </span>
+    <button id="add-marker-btn" onclick="addMarker()" title="Add marker at demod frequency">📍</button>
+  </div>
+
+  <div id="status-right">
+    <span id="demod-freq"></span>
+    <button id="mute-btn" onclick="toggleMute()" title="Mute audio">🔊</button>
+    <button id="gear-btn" onclick="openPanel()">SETTINGS</button>
+  </div>
+</div>
+
+<div id="display">
+  <canvas id="spectrum-canvas"></canvas>
+  <canvas id="waterfall-canvas"></canvas>
+</div>
+
+<div id="panel">
+  <div id="panel-head">
+    <span id="panel-title">SETTINGS — press Enter to apply<br><span style="font-size:10px; color:#33cc33; font-weight:normal; letter-spacing:0;">SAVE to make permanent</span></span>
+    <button id="panel-close" onclick="closePanel()">✕ CLOSE</button>
+  </div>
+  <div id="panel-body">
+
+    <div class="sec">
+      <div class="sec-title">Profile</div>
+      <div class="field">
+        <label>Select profile</label>
+        <select id="profile-sel" onchange="selectProfile()"></select>
+      </div>
+      <div class="field">
+        <label>Name (for Save As / Rename)</label>
+        <input type="text" id="profile-name" placeholder="Enter name…" maxlength="40">
+      </div>
+      <div class="row">
+        <button class="btn" onclick="saveAsNew()">Save As New</button>
+        <button class="btn" onclick="renameProfile()">Rename</button>
+        <button class="btn danger" onclick="deleteProfile()">Delete</button>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-title">SDR Parameters</div>
+      <div class="fields-grid">
+        <div class="field">
+          <label>Centre Frequency (MHz)</label>
+          <input type="number" id="freq-mhz" step="0.001" min="24" max="1766">
+        </div>
+        <div class="field">
+          <label>Sample Rate</label>
+          <select id="sample-rate">
+            <option value="250000">0.25 MSPS</option>
+            <option value="1000000">1.0 MSPS</option>
+            <option value="1024000">1.024 MSPS</option>
+            <option value="1536000">1.536 MSPS</option>
+            <option value="2000000">2.0 MSPS</option>
+            <option value="2048000">2.048 MSPS</option>
+            <option value="2400000">2.4 MSPS</option>
+            <option value="2800000">2.8 MSPS</option>
+          </select>
+        </div>
+        <div class="field" style="grid-column: 1 / -1;">
+          <label>Tuner Gain</label>
+          <select id="gain-sel">
+            <option value="0">0.0 dB</option>
+            <option value="9">0.9 dB</option>
+            <option value="14">1.4 dB</option>
+            <option value="27">2.7 dB</option>
+            <option value="37">3.7 dB</option>
+            <option value="77">7.7 dB</option>
+            <option value="87">8.7 dB</option>
+            <option value="125">12.5 dB</option>
+            <option value="144">14.4 dB</option>
+            <option value="157">15.7 dB</option>
+            <option value="166">16.6 dB</option>
+            <option value="197">19.7 dB</option>
+            <option value="207">20.7 dB</option>
+            <option value="229">22.9 dB</option>
+            <option value="254">25.4 dB</option>
+            <option value="280">28.0 dB</option>
+            <option value="297">29.7 dB</option>
+            <option value="328">32.8 dB</option>
+            <option value="338">33.8 dB</option>
+            <option value="364">36.4 dB</option>
+            <option value="372">37.2 dB</option>
+            <option value="386">38.6 dB</option>
+            <option value="402">40.2 dB</option>
+            <option value="421">42.1 dB</option>
+            <option value="434">43.4 dB</option>
+            <option value="439">43.9 dB</option>
+            <option value="445">44.5 dB</option>
+            <option value="480">48.0 dB</option>
+            <option value="496">49.6 dB</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-title">Display Ranges</div>
+      <div class="fields-grid">
+        <div class="field">
+          <label>Spectrum Min (dBFS)</label>
+          <input type="number" id="spec-min" step="1">
+        </div>
+        <div class="field">
+          <label>Spectrum Max (dBFS)</label>
+          <input type="number" id="spec-max" step="1">
+        </div>
+        <div class="field">
+          <label>Waterfall Min — black (dBFS)</label>
+          <input type="number" id="wf-min" step="1">
+        </div>
+        <div class="field">
+          <label>Waterfall Max — red (dBFS)</label>
+          <input type="number" id="wf-max" step="1">
+        </div>
+      </div>
+    </div>
+<div id="markers-list" style="margin-bottom:0;"></div>
+    </div>
+
+    <button id="save-btn" onclick="saveCurrentProfile()">💾 SAVE</button>
+
+  </div>
+</div>
+
+<script>
+// ─── Display state ────────────────────────────────────────────────────────────
+let SPEC_MIN_DB = -70.0, SPEC_MAX_DB = -40.0;
+let WF_MIN_DB   = -80.0, WF_MAX_DB   = -50.0;
+
+// ─── Profile / live state ─────────────────────────────────────────────────────
+let profiles = {}, currentProfile = 'Default';
+let autoSaveEnabled = false; // prevents auto-save during initial profile load
+let liveSettings = {
+  centre_freq: 869525000, sample_rate: 2000000, gain_tenths: 338,
+  spec_min_db: -70, spec_max_db: -40, wf_min_db: -80, wf_max_db: -50,
+};
+
+function syncDisplayRanges() {
+  SPEC_MIN_DB = liveSettings.spec_min_db;
+  SPEC_MAX_DB = liveSettings.spec_max_db;
+  WF_MIN_DB   = liveSettings.wf_min_db;
+  WF_MAX_DB   = liveSettings.wf_max_db;
+  // Keep squelch line within the newly visible range
+  if (squelchDb < SPEC_MIN_DB || squelchDb > SPEC_MAX_DB) {
+    squelchDb = SPEC_MIN_DB;
+    updateSqlInput();
+  }
+}
+
+// ─── Demod slice state ────────────────────────────────────────────────────────
+const DEMOD_BW = { NBFM: 12500, WBFM: 180000, AM: 10000 };
+let demodMode      = null;
+let demodOffsetHz  = 0;
+let sliceDragging  = false;
+let squelchDb      = -60.0;    // reasonable starting value — user types or drags to fine-tune
+let squelchDragging = false;
+let demodSendTimer = null;
+
+// Update the SQL input box to show the current squelchDb value
+function updateSqlInput() {
+  const el = document.getElementById('sql-val');
+  if (el) el.value = squelchDb.toFixed(0);
+}
+
+// Called when user types in the SQL input box
+function setSquelchFromInput() {
+  const val = parseFloat(document.getElementById('sql-val').value);
+  if (isNaN(val)) return;
+  squelchDb = val;
+  scheduleDemodSend();
+}
+
+// Show/hide SQL control and add-marker button when mode changes.
+// squelchDb is NOT reset here — it must always come from the loaded profile.
+function updateSqlVisibility() {
+  const show = demodMode === 'NBFM' || demodMode === 'AM';
+  const ctrl = document.getElementById('sql-ctrl');
+  const pin  = document.getElementById('add-marker-btn');
+  if (ctrl) {
+    ctrl.style.opacity       = show     ? '1' : '0';
+    ctrl.style.pointerEvents = show     ? 'auto' : 'none';
+  }
+  if (pin) {
+    pin.style.opacity       = demodMode ? '1' : '0';
+    pin.style.pointerEvents = demodMode ? 'auto' : 'none';
+  }
+  updateSqlInput();
+}
+
+// ─── Canvas setup ─────────────────────────────────────────────────────────────
+const specCv  = document.getElementById('spectrum-canvas');
+const wfCv    = document.getElementById('waterfall-canvas');
+const specCtx = specCv.getContext('2d');
+const wfCtx   = wfCv.getContext('2d');
+let wfImgData = null;
+
+function resizeCanvases() {
+  const disp = document.getElementById('display');
+  const w = disp.clientWidth, h = disp.clientHeight;
+  const sh = Math.floor(h * 0.22);
+  specCv.width = w; specCv.height = sh;
+  wfCv.width   = w; wfCv.height   = h - sh;
+  wfImgData = null;
+}
+window.addEventListener('resize', resizeCanvases);
+resizeCanvases();
+
+// ─── Hz ↔ canvas X ───────────────────────────────────────────────────────────
+function getSR() { return liveSettings.sample_rate; }
+function getCF() { return liveSettings.centre_freq; }
+function hzToX(offsetHz, cw) { return cw * (0.5 + offsetHz / getSR()); }
+function xToHz(x, cw)        { return (x / cw - 0.5) * getSR(); }
+function demodAbsMHz()        { return (getCF() + demodOffsetHz) / 1e6; }
+
+// ─── Binary frame router ──────────────────────────────────────────────────────
+// Spectrum frame: byte[0]=0x53, bytes[1..9]=4×i16 display ranges, bytes[9..2057]=1024×i16 bins
+// Audio frame:    byte[0]=0x41, bytes[1-2]=u16 sample_rate, bytes[3..]=i16 PCM
+function handleBinaryFrame(buf) {
+  const typeByte = new Uint8Array(buf, 0, 1)[0];
+  if (typeByte === 0x53) {         // spectrum
+    const bins = parseSpectrum(buf);
+    if (bins) { drawSpectrum(bins); drawWaterfall(bins); scanTick(bins); }
+  } else if (typeByte === 0x41) {  // audio
+    handleAudioFrame(buf);
+  }
+}
+
+function parseSpectrum(buf) {
+  if (buf.byteLength < 1 + 8 + 1024 * 2) return null;
+  const v = new DataView(buf);
+  // Display ranges from header (bytes 1-8)
+  SPEC_MIN_DB = v.getInt16(1, true) / 10;
+  SPEC_MAX_DB = v.getInt16(3, true) / 10;
+  WF_MIN_DB   = v.getInt16(5, true) / 10;
+  WF_MAX_DB   = v.getInt16(7, true) / 10;
+  // Bins start at byte 9
+  const bins = new Float32Array(1024);
+  for (let i = 0; i < 1024; i++)
+    bins[i] = v.getInt16(9 + i * 2, true) / 10;
+  return bins;
+}
+
+// ─── Web Audio API ────────────────────────────────────────────────────────────
+let audioCtx      = null;
+let nextPlayTime  = 0;
+const AUDIO_AHEAD = 0.12;
+let audioMuted    = false;
+
+function initAudio() {
+  if (audioCtx) return;
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    nextPlayTime = audioCtx.currentTime + AUDIO_AHEAD;
+  } catch (e) { console.error('[Audio] Failed:', e); }
+}
+
+function toggleMute() {
+  audioMuted = !audioMuted;
+  const btn = document.getElementById('mute-btn');
+  btn.textContent = audioMuted ? '🔇' : '🔊';
+  btn.classList.toggle('muted', audioMuted);
+  if (!audioMuted) nextPlayTime = 0; // reset scheduler so audio resumes immediately
+}
+
+function handleAudioFrame(buf) {
+  if (!audioCtx || audioMuted) return;
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+
+  const v        = new DataView(buf);
+  const srcRate  = v.getUint16(1, true);
+  const nSamples = (buf.byteLength - 3) / 2;
+  if (nSamples < 1) return;
+
+  const pcm = new Float32Array(nSamples);
+  for (let i = 0; i < nSamples; i++)
+    pcm[i] = v.getInt16(3 + i * 2, true) / 32768.0;
+
+  // Resample from srcRate to audioCtx.sampleRate using cubic Hermite interpolation.
+  // Linear interpolation introduces error that repeats at srcRate/gcd(srcRate,dstRate) Hz —
+  // for 50000→48000 Hz this produces a 2000 Hz artifact that sounds like warble on pure tones.
+  // Cubic Hermite has ~100× lower error and eliminates the warble.
+  const dstRate = audioCtx.sampleRate;
+  const ratio   = srcRate / dstRate;
+  const dstLen  = Math.ceil(nSamples / ratio);
+  const abuf    = audioCtx.createBuffer(1, dstLen, dstRate);
+  const out     = abuf.getChannelData(0);
+  const last    = nSamples - 1;
+
+  for (let i = 0; i < dstLen; i++) {
+    const pos = i * ratio;
+    const idx = Math.floor(pos);
+    const t   = pos - idx;
+    // Four surrounding samples (clamped at boundaries)
+    const p0  = pcm[Math.max(idx - 1, 0)];
+    const p1  = pcm[idx];
+    const p2  = pcm[Math.min(idx + 1, last)];
+    const p3  = pcm[Math.min(idx + 2, last)];
+    // Catmull-Rom / Hermite cubic — preserves amplitude on pure tones
+    out[i] = 0.5 * (
+      (2 * p1) +
+      (-p0 + p2) * t +
+      (2*p0 - 5*p1 + 4*p2 - p3) * t * t +
+      (-p0 + 3*p1 - 3*p2 + p3) * t * t * t
+    );
+  }
+
+  const source = audioCtx.createBufferSource();
+  source.buffer = abuf;
+  source.connect(audioCtx.destination);
+
+  const now = audioCtx.currentTime;
+  if (nextPlayTime < now + 0.02) nextPlayTime = now + AUDIO_AHEAD;
+  source.start(nextPlayTime);
+  nextPlayTime += abuf.duration;
+}
+
+// ─── Spectrum drawing ─────────────────────────────────────────────────────────
+function drawSpectrum(bins) {
+  const w = specCv.width, h = specCv.height;
+  const range  = SPEC_MAX_DB - SPEC_MIN_DB;
+  const cf     = getCF(), sr = getSR();
+  const loMHz  = (cf - sr / 2) / 1e6;
+  const hiMHz  = (cf + sr / 2) / 1e6;
+  const bwMHz  = sr / 1e6;
+
+  specCtx.fillStyle = '#090910';
+  specCtx.fillRect(0, 0, w, h);
+
+  // Horizontal dB grid at round steps
+  const dbRange = SPEC_MAX_DB - SPEC_MIN_DB;
+  const dbStep  = dbRange > 60 ? 10 : dbRange < 20 ? 2 : 5;
+  const dbFirst = Math.ceil(SPEC_MIN_DB / dbStep) * dbStep;
+  specCtx.font = '10px Courier New';
+  for (let db = dbFirst; db <= SPEC_MAX_DB; db += dbStep) {
+    const y = Math.round(h * (1 - (db - SPEC_MIN_DB) / range)) + 0.5;
+    specCtx.strokeStyle = '#252548'; specCtx.lineWidth = 1;  // faint but visible
+    specCtx.beginPath(); specCtx.moveTo(0, y); specCtx.lineTo(w, y); specCtx.stroke();
+    specCtx.fillStyle = '#ffffff';
+    specCtx.fillText(db.toFixed(0) + ' dB', 4, y - 2);
+  }
+
+  // Vertical frequency grid at round MHz steps
+  let freqStep = bwMHz > 4 ? 0.5 : bwMHz > 2 ? 0.2 : bwMHz > 1 ? 0.1 : bwMHz > 0.5 ? 0.05 : 0.025;
+  const freqFirst = Math.ceil(loMHz / freqStep) * freqStep;
+  for (let fMHz = freqFirst; fMHz <= hiMHz + 1e-9; fMHz = Math.round((fMHz + freqStep) * 1e6) / 1e6) {
+    const x = Math.round(w * (fMHz - loMHz) / bwMHz) + 0.5;
+    if (x < 0 || x > w) continue;
+    specCtx.strokeStyle = '#252548'; specCtx.lineWidth = 1;  // faint but visible
+    specCtx.beginPath(); specCtx.moveTo(x, 0); specCtx.lineTo(x, h - 14); specCtx.stroke();
+    const label = fMHz.toFixed(freqStep < 0.1 ? 3 : 1);
+    const tw = specCtx.measureText(label).width;
+    specCtx.fillStyle = '#ffffff';
+    specCtx.fillText(label, x - tw / 2, h - 2);
+  }
+
+  // Squelch line — horizontal dashed red line, draggable, only for NBFM and AM
+  if (demodMode && demodMode !== 'WBFM') {
+    const sqY = squelchLineY(h);
+    if (sqY >= 0 && sqY <= h) {
+      specCtx.strokeStyle = 'rgba(220, 50, 50, 0.75)';
+      specCtx.lineWidth   = 1.5;
+      specCtx.setLineDash([6, 4]);
+      specCtx.beginPath(); specCtx.moveTo(0, sqY); specCtx.lineTo(w, sqY); specCtx.stroke();
+      specCtx.setLineDash([]);
+      // Label showing current threshold
+      const label = 'SQL ' + squelchDb.toFixed(0) + ' dB';
+      specCtx.fillStyle = 'rgba(220, 80, 80, 0.9)';
+      specCtx.font = '10px Courier New';
+      specCtx.fillText(label, 4, sqY - 3);
+    }
+  }
+
+  // Demod slice overlay
+  if (demodMode) {
+    const bw   = DEMOD_BW[demodMode];
+    const cx   = hzToX(demodOffsetHz, w);
+    const half = w * bw / sr / 2;
+    specCtx.fillStyle = 'rgba(80,120,255,0.15)';
+    specCtx.fillRect(cx - half, 0, half * 2, h);
+    specCtx.strokeStyle = 'rgba(100,160,255,0.7)'; specCtx.lineWidth = 1;
+    specCtx.beginPath(); specCtx.moveTo(cx - half, 0); specCtx.lineTo(cx - half, h); specCtx.stroke();
+    specCtx.beginPath(); specCtx.moveTo(cx + half, 0); specCtx.lineTo(cx + half, h); specCtx.stroke();
+    specCtx.strokeStyle = 'rgba(180,210,255,0.85)'; specCtx.lineWidth = 1.5;
+    specCtx.setLineDash([4, 4]);
+    specCtx.beginPath(); specCtx.moveTo(cx, 0); specCtx.lineTo(cx, h); specCtx.stroke();
+    specCtx.setLineDash([]);
+  }
+
+  // Spectrum trace
+  specCtx.strokeStyle = '#44dd44'; specCtx.lineWidth = 1.5;
+  specCtx.beginPath();
+  for (let i = 0; i < bins.length; i++) {
+    const x = w * i / bins.length;
+    const t = Math.max(0, Math.min(1, (bins[i] - SPEC_MIN_DB) / range));
+    const y = h * (1 - t);
+    i === 0 ? specCtx.moveTo(x, y) : specCtx.lineTo(x, y);
+  }
+  specCtx.stroke();
+
+  // Channel markers (PMR446 + custom)
+  drawSpectrumMarkers();
+}
+
+// ─── Waterfall ────────────────────────────────────────────────────────────────
+function dbToRGB(db) {
+  const t = Math.max(0, Math.min(1, (db - WF_MIN_DB) / (WF_MAX_DB - WF_MIN_DB)));
+  if (t < 0.25) { const u = t/0.25; return [0, 0, Math.round(u*180)]; }
+  if (t < 0.5)  { const u=(t-0.25)/0.25; return [0, Math.round(u*120), Math.round(180+u*75)]; }
+  if (t < 0.75) { const u=(t-0.5)/0.25;  return [Math.round(u*255), Math.round(120+u*80), Math.round(255-u*255)]; }
+  const u=(t-0.75)/0.25; return [255, Math.round(200-u*200), 0];
+}
+
+function drawWaterfall(bins) {
+  const w = wfCv.width, h = wfCv.height;
+  if (!wfImgData || wfImgData.width !== w || wfImgData.height !== h) {
+    wfImgData = wfCtx.createImageData(w, h);
+    wfImgData.data.fill(0);
+  }
+  const d = wfImgData.data;
+  d.copyWithin(w * 4, 0, w * (h - 1) * 4);
+  for (let x = 0; x < w; x++) {
+    const [r, g, b] = dbToRGB(bins[Math.floor(x * bins.length / w)]);
+    const idx = x * 4;
+    d[idx] = r; d[idx+1] = g; d[idx+2] = b; d[idx+3] = 255;
+  }
+  wfCtx.putImageData(wfImgData, 0, 0);
+
+  // Slice lines on waterfall
+  if (demodMode) {
+    const sr   = getSR();
+    const cx   = hzToX(demodOffsetHz, w);
+    const half = w * DEMOD_BW[demodMode] / sr / 2;
+    wfCtx.strokeStyle = 'rgba(120,160,255,0.55)'; wfCtx.lineWidth = 1;
+    wfCtx.beginPath(); wfCtx.moveTo(cx-half, 0); wfCtx.lineTo(cx-half, h); wfCtx.stroke();
+    wfCtx.beginPath(); wfCtx.moveTo(cx+half, 0); wfCtx.lineTo(cx+half, h); wfCtx.stroke();
+  }
+
+  // Channel markers on waterfall
+  drawWaterfallMarkers();
+}
+
+// Shared helper — always bundles mode + offset + squelch in one command
+function sendDemodCmd() {
+  if (!demodMode) {
+    sendCmd({ cmd: 'set_demod', mode: null, offset_hz: 0, squelch_db: -100.0 });
+  } else {
+    sendCmd({ cmd: 'set_demod', mode: demodMode, offset_hz: demodOffsetHz, squelch_db: squelchDb });
+  }
+}
+
+// ─── Channel markers ──────────────────────────────────────────────────────────
+
+// PMR446 16-channel plan (EU): 446.00625 MHz base, 12.5 kHz spacing
+const PMR446_BASE_HZ = 446_006_250;
+const PMR446_STEP_HZ = 12_500;
+const PMR446_COUNT   = 16;
+
+// Draw all visible markers on the spectrum canvas
+function drawSpectrumMarkers() {
+  const cf  = getCF(), sr = getSR();
+  const lo  = cf - sr / 2, hi = cf + sr / 2;
+  const w   = specCv.width, h = specCv.height;
+  if (cf === 0) return;
+
+  // PMR446 channels — yellow
+  for (let ch = 1; ch <= PMR446_COUNT; ch++) {
+    const freq = PMR446_BASE_HZ + (ch - 1) * PMR446_STEP_HZ;
+    if (freq >= lo && freq <= hi) {
+      drawSpectrumMarker(w * (freq - lo) / sr, String(ch),
+                         'rgba(255, 215, 0, 0.92)', 'rgba(255, 215, 0, 0.15)', h);
+    }
+  }
+
+  // Custom markers from current profile — cyan
+  const markers = profiles[currentProfile]?.markers || [];
+  markers.forEach(m => {
+    if (m.freq_hz >= lo && m.freq_hz <= hi) {
+      drawSpectrumMarker(w * (m.freq_hz - lo) / sr, m.label,
+                         'rgba(100, 210, 255, 0.92)', 'rgba(100, 210, 255, 0.10)', h);
+    }
+  });
+}
+
+function drawSpectrumMarker(x, label, color, fillColor, h) {
+  // Faint vertical line
+  specCtx.strokeStyle = color.replace('0.92', '0.25');
+  specCtx.lineWidth = 1;
+  specCtx.setLineDash([3, 3]);
+  specCtx.beginPath(); specCtx.moveTo(x, 20); specCtx.lineTo(x, h - 14); specCtx.stroke();
+  specCtx.setLineDash([]);
+  // Filled downward triangle at top
+  specCtx.fillStyle = color;
+  specCtx.beginPath();
+  specCtx.moveTo(x,     4);
+  specCtx.lineTo(x - 5, 0);
+  specCtx.lineTo(x + 5, 0);
+  specCtx.closePath();
+  specCtx.fill();
+  // Label
+  specCtx.font      = 'bold 9px Courier New';
+  specCtx.textAlign = 'center';
+  specCtx.fillStyle = color;
+  specCtx.fillText(label, x, 16);
+  specCtx.textAlign = 'left';
+}
+
+// Draw marker lines on waterfall (thin vertical lines at top)
+function drawWaterfallMarkers() {
+  const cf = getCF(), sr = getSR();
+  const lo = cf - sr / 2;
+  const w  = wfCv.width;
+  if (cf === 0) return;
+
+  function wfLine(freq, color) {
+    if (freq < lo || freq > lo + sr) return;
+    const x = w * (freq - lo) / sr;
+    wfCtx.strokeStyle = color;
+    wfCtx.lineWidth = 1;
+    wfCtx.beginPath(); wfCtx.moveTo(x, 0); wfCtx.lineTo(x, 10); wfCtx.stroke();
+  }
+
+  for (let ch = 1; ch <= PMR446_COUNT; ch++)
+    wfLine(PMR446_BASE_HZ + (ch - 1) * PMR446_STEP_HZ, 'rgba(255, 215, 0, 0.5)');
+
+  (profiles[currentProfile]?.markers || []).forEach(m =>
+    wfLine(m.freq_hz, 'rgba(100, 210, 255, 0.5)')
+  );
+}
+
+// Add marker at current demod frequency
+function addMarker() {
+  const absFreqMHz = demodAbsMHz();
+  const label = prompt('Marker label:', absFreqMHz.toFixed(4) + ' MHz');
+  if (!label || !label.trim()) return;
+  const freqHz = Math.round(getCF() + demodOffsetHz);
+  sendCmd({ cmd: 'add_marker', freq_hz: freqHz, label: label.trim() });
+}
+
+// Remove a custom marker by its frequency
+function removeMarker(freqHz) {
+  sendCmd({ cmd: 'remove_marker', freq_hz: freqHz });
+}
+
+// Rebuild the markers list in the settings panel
+function refreshMarkersList() {
+  const list    = document.getElementById('markers-list');
+  const markers = profiles[currentProfile]?.markers || [];
+  list.innerHTML = '';
+  if (markers.length === 0) {
+    list.innerHTML = '<div style="color:#444466; font-size:10px;">No custom markers</div>';
+    return;
+  }
+  markers.forEach(m => {
+    const div  = document.createElement('div');
+    div.style  = 'display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;';
+    const mhz  = (m.freq_hz / 1e6).toFixed(4);
+    div.innerHTML = `
+      <span style="color:#aaaaee; font-size:10px;">${m.label}</span>
+      <span style="color:#6677bb; font-size:10px; margin:0 6px;">${mhz} MHz</span>
+      <button onclick="removeMarker(${m.freq_hz})"
+        style="background:#2a1010; border:1px solid #662222; color:#dd6666;
+               font-size:10px; cursor:pointer; padding:1px 5px; border-radius:2px;">×</button>`;
+    list.appendChild(div);
+  });
+}
+function setDemod(mode) {
+  demodMode = mode;
+  ['NBFM','WBFM','AM'].forEach(m =>
+    document.getElementById('btn-' + m.toLowerCase()).classList.toggle('active', mode === m)
+  );
+  if (mode) {
+    initAudio();
+    document.getElementById('demod-freq').textContent = demodAbsMHz().toFixed(4) + ' MHz';
+  } else {
+    document.getElementById('demod-freq').textContent = '';
+    if (scanActive) { scanActive = false; scanLocked = false; updateScanButton(); }
+  }
+  updateSqlVisibility();
+  sendDemodCmd();
+  // Auto-save demod mode to current profile so it survives page refresh.
+  // Guard prevents spurious saves during initial page load.
+  if (autoSaveEnabled) saveCurrentProfile();
+}
+
+// ─── Scanner ──────────────────────────────────────────────────────────────────
+//
+// Two scan modes:
+//
+//   CH (channel) — checks only visible yellow PMR446 markers + cyan custom
+//                  markers. Uses squelchDb as the signal trigger threshold —
+//                  already calibrated by the user for the band. No separate
+//                  scan threshold needed.
+//
+//   WB (wideband) — checks every spectrum bin against its own per-bin noise
+//                   floor estimate (IIR, α=0.15, ~1s adaptation at 25fps).
+//                   Triggers when any bin exceeds its noise floor by more than
+//                   scanMarginDb (default 12 dB). Locks onto the bin with the
+//                   highest margin above its local noise floor.
+//                   Squelch is NOT used as the trigger — it only gates audio.
+//
+// In both modes: scan and squelch are decoupled. Squelch gates audio output.
+// Scan decides which frequency to demodulate.
+//
+// Noise floor adaptation: alpha=0.15 per frame → reaches 98% in ~25 frames
+// (~1 second at 25fps). A 1-second hold (noiseFloorFrames counter) prevents
+// false triggers during the initial settling period.
+
+let scanActive     = false;
+let scanLocked     = false;
+let scanHoldFrames = 0;
+let scanMode       = 'CH';         // 'CH' | 'WB'
+const SCAN_HOLD_FRAMES = 12;       // ~0.5 s tail hold at 25fps
+
+// ── Noise floor state (WB mode) ───────────────────────────────────────────────
+let noiseFloor        = null;      // Float32Array[OUTPUT_BINS], lazily allocated
+let noiseFloorFrames  = 0;         // frames counted since allocation
+const NF_ALPHA        = 0.15;      // IIR coefficient — 1s settling at 25fps
+const NF_SETTLE_FRAMES = 25;       // wait this many frames before triggering
+
+function getScanMarginDb() {
+  return parseFloat(document.getElementById('wb-margin-val')?.value ?? 12);
+}
+
+// Initialise or reset the noise floor array when sample rate or mode changes
+function resetNoiseFloor() {
+  noiseFloor       = null;
+  noiseFloorFrames = 0;
+}
+
+// Update noise floor IIR from the latest spectrum frame
+function updateNoiseFloor(bins) {
+  if (!noiseFloor || noiseFloor.length !== bins.length) {
+    // First call: seed from current spectrum so we don't have to wait
+    // for a cold start from zero
+    noiseFloor       = new Float32Array(bins);
+    noiseFloorFrames = 0;
+    return;
+  }
+  for (let i = 0; i < bins.length; i++)
+    noiseFloor[i] += NF_ALPHA * (bins[i] - noiseFloor[i]);
+  noiseFloorFrames++;
+}
+
+function toggleScan() {
+  if (!demodMode) setDemod('NBFM');
+  scanActive = !scanActive;
+  if (!scanActive) {
+    scanLocked = false; scanHoldFrames = 0;
+    document.getElementById('demod-freq').textContent =
+      getCF() ? (getCF() / 1e6).toFixed(3) + ' MHz' : '— MHz';
+  } else {
+    resetNoiseFloor(); // fresh noise floor on each scan start
+  }
+  updateScanButton();
+}
+
+function updateScanModeButton() {
+  const btn    = document.getElementById('scan-mode-btn');
+  const wbCtrl = document.getElementById('wb-ctrl');
+  if (!btn) return;
+  if (scanMode === 'WB') {
+    btn.textContent  = 'WB';
+    btn.style.color       = '#88ccff';
+    btn.style.borderColor = '#224488';
+    btn.style.background  = '#0a1a2a';
+    if (wbCtrl) { wbCtrl.style.opacity = '1'; wbCtrl.style.pointerEvents = 'auto'; }
+  } else {
+    // CH — yellow to match PMR446 channel markers it scans
+    btn.textContent  = 'CH';
+    btn.style.color       = '#ffd700';
+    btn.style.borderColor = '#665500';
+    btn.style.background  = '#1a1400';
+    if (wbCtrl) { wbCtrl.style.opacity = '0'; wbCtrl.style.pointerEvents = 'none'; }
+  }
+}
+
+function toggleScanMode() {
+  scanMode = (scanMode === 'CH') ? 'WB' : 'CH';
+  scanLocked = false; scanHoldFrames = 0;
+  resetNoiseFloor();
+  updateScanModeButton();
+}
+
+function updateScanButton() {
+  const btn = document.getElementById('scan-btn');
+  if (!btn) return;
+  if (scanActive) {
+    btn.classList.add('active');
+    btn.style.borderColor = '#2a6a2a';
+    btn.style.color       = '#44ff44';
+    btn.style.background  = '#0a2a0a';
+  } else {
+    btn.classList.remove('active');
+    btn.style.borderColor = '#333355';
+    btn.style.color       = '#8888bb';
+    btn.style.background  = '';
+  }
+}
+
+// ── CH mode helpers ───────────────────────────────────────────────────────────
+
+// Peak dBFS within ±2.5 kHz of freqHz — tight enough to exclude inter-channel carriers
+function channelPower(bins, freqHz) {
+  const cf = getCF(), sr = getSR();
+  const center = Math.round((freqHz - (cf - sr/2)) / sr * bins.length);
+  const hw     = Math.max(1, Math.round(2_500 / sr * bins.length));
+  let max = -200;
+  for (let i = Math.max(0, center-hw); i <= Math.min(bins.length-1, center+hw); i++)
+    max = Math.max(max, bins[i]);
+  return max;
+}
+
+// All PMR446 + custom markers visible in the current spectrum window
+function visibleScanChannels() {
+  const cf = getCF(), sr = getSR(), lo = cf-sr/2, hi = cf+sr/2;
+  const ch = [];
+  for (let n = 1; n <= PMR446_COUNT; n++) {
+    const freq = PMR446_BASE_HZ + (n-1) * PMR446_STEP_HZ;
+    if (freq >= lo && freq <= hi) ch.push({ freq, label: String(n) });
+  }
+  (profiles[currentProfile]?.markers || []).forEach(m => {
+    if (m.freq_hz >= lo && m.freq_hz <= hi) ch.push({ freq: m.freq_hz, label: m.label });
+  });
+  return ch;
+}
+
+// ── WB mode helpers ───────────────────────────────────────────────────────────
+
+// Find the bin with the highest margin above its local noise floor.
+// Returns { binIdx, margin } or null if nothing exceeds the threshold.
+function findWidebandSignal(bins) {
+  if (!noiseFloor || noiseFloorFrames < NF_SETTLE_FRAMES) return null;
+  const margin = getScanMarginDb();
+  let bestBin = -1, bestMargin = -999;
+  for (let i = 0; i < bins.length; i++) {
+    const m = bins[i] - noiseFloor[i];
+    if (m > margin && m > bestMargin) { bestMargin = m; bestBin = i; }
+  }
+  return bestBin >= 0 ? { binIdx: bestBin, margin: bestMargin } : null;
+}
+
+// Convert bin index to absolute frequency in Hz
+function binToHz(binIdx, numBins) {
+  const cf = getCF(), sr = getSR();
+  return (cf - sr/2) + (binIdx / numBins) * sr;
+}
+
+// ── Main scan tick — called on every spectrum frame ───────────────────────────
+
+function scanTick(bins) {
+  if (!scanActive || !demodMode || !bins) return;
+
+  // Always update noise floor in WB mode (even when locked) so it adapts
+  // to changing band conditions while listening to a signal
+  if (scanMode === 'WB') updateNoiseFloor(bins);
+
+  // ── CH mode ──────────────────────────────────────────────────────────────
+  if (scanMode === 'CH') {
+    const channels = visibleScanChannels();
+    if (channels.length === 0) return;
+
+    if (scanLocked) {
+      // Check if currently locked channel has dropped below squelch threshold
+      const power = channelPower(bins, Math.round(getCF() + demodOffsetHz));
+      if (power < squelchDb) {
+        if (--scanHoldFrames <= 0) {
+          scanLocked = false;
+          document.getElementById('demod-freq').textContent = '🔍 CH scan…';
+        }
+      } else {
+        scanHoldFrames = SCAN_HOLD_FRAMES;
+      }
+    }
+
+    if (!scanLocked) {
+      for (const ch of channels) {
+        if (channelPower(bins, ch.freq) >= squelchDb) {
+          demodOffsetHz  = ch.freq - getCF();
+          scanLocked     = true;
+          scanHoldFrames = SCAN_HOLD_FRAMES;
+          document.getElementById('demod-freq').textContent =
+            (ch.freq/1e6).toFixed(4) + ' MHz  CH ' + ch.label;
+          scheduleDemodSend();
+          break;
+        }
+      }
+    }
+    return;
+  }
+
+  // ── WB mode ──────────────────────────────────────────────────────────────
+  if (!noiseFloor || noiseFloorFrames < NF_SETTLE_FRAMES) {
+    // Settling — show countdown so user knows scanner is initialising
+    const remaining = Math.ceil((NF_SETTLE_FRAMES - noiseFloorFrames) / 25);
+    document.getElementById('demod-freq').textContent =
+      '📡 NF settling ' + remaining + 's…';
+    return;
+  }
+
+  if (scanLocked) {
+    // Stay locked as long as the current bin remains above its noise floor
+    const curBin   = Math.round(
+      (demodOffsetHz / getSR() + 0.5) * bins.length
+    );
+    const clampBin = Math.max(0, Math.min(bins.length-1, curBin));
+    const margin   = bins[clampBin] - noiseFloor[clampBin];
+    if (margin < getScanMarginDb() * 0.5) {  // hysteresis: release at half the threshold
+      if (--scanHoldFrames <= 0) {
+        scanLocked = false;
+        document.getElementById('demod-freq').textContent = '🔍 WB scan…';
+      }
+    } else {
+      scanHoldFrames = SCAN_HOLD_FRAMES;
+    }
+  }
+
+  if (!scanLocked) {
+    const best = findWidebandSignal(bins);
+    if (best) {
+      const freqHz   = binToHz(best.binIdx, bins.length);
+      demodOffsetHz  = freqHz - getCF();
+      scanLocked     = true;
+      scanHoldFrames = SCAN_HOLD_FRAMES;
+      document.getElementById('demod-freq').textContent =
+        (freqHz/1e6).toFixed(4) + ' MHz  +' + best.margin.toFixed(0) + 'dB';
+      scheduleDemodSend();
+    }
+  }
+}
+
+// ─── Slice + squelch drag ─────────────────────────────────────────────────────
+
+function clientX(e) { return e.touches ? e.touches[0].clientX : e.clientX; }
+function clientY(e) { return e.touches ? e.touches[0].clientY : e.clientY; }
+
+// Y position of squelch line on spectrum canvas (-1 if not shown)
+function squelchLineY(h) {
+  if (!demodMode || demodMode === 'WBFM') return -1;
+  const range = SPEC_MAX_DB - SPEC_MIN_DB;
+  return Math.round(h * (1 - (squelchDb - SPEC_MIN_DB) / range));
+}
+
+function moveSlice(canvas, e) {
+  if (!demodMode) return;
+  const x = clientX(e) - canvas.getBoundingClientRect().left;
+  demodOffsetHz = Math.max(-getSR()/2, Math.min(getSR()/2, xToHz(x, canvas.width)));
+  document.getElementById('demod-freq').textContent = demodAbsMHz().toFixed(4) + ' MHz';
+  scheduleDemodSend();
+}
+
+function moveSquelch(e) {
+  const y     = clientY(e) - specCv.getBoundingClientRect().top;
+  const range = SPEC_MAX_DB - SPEC_MIN_DB;
+  squelchDb   = SPEC_MAX_DB - (y / specCv.height) * range;
+  squelchDb   = Math.max(SPEC_MIN_DB, Math.min(SPEC_MAX_DB, squelchDb));
+  updateSqlInput();
+  scheduleDemodSend();
+}
+
+function scheduleDemodSend() {
+  if (!demodSendTimer) {
+    demodSendTimer = setTimeout(() => { demodSendTimer = null; sendDemodCmd(); }, 40);
+  }
+}
+
+// Spectrum canvas — detects whether to start slice or squelch drag
+function onSpecDown(e) {
+  if (!demodMode) return;
+  const rect = specCv.getBoundingClientRect();
+  const y    = clientY(e) - rect.top;
+  const sqY  = squelchLineY(specCv.height);
+  if (sqY >= 0 && Math.abs(y - sqY) <= 10) {
+    squelchDragging = true;
+    moveSquelch(e);
+  } else {
+    sliceDragging = true;
+    moveSlice(specCv, e);
+  }
+  e.preventDefault();
+}
+function onSpecMove(e) {
+  if (squelchDragging) { moveSquelch(e); e.preventDefault(); }
+  else if (sliceDragging && demodMode) { moveSlice(specCv, e); e.preventDefault(); }
+}
+
+// Waterfall canvas — slice drag only (no Y-axis scale for squelch)
+function onWfDown(e) {
+  if (!demodMode) return;
+  sliceDragging = true;
+  moveSlice(wfCv, e);
+  e.preventDefault();
+}
+function onWfMove(e) {
+  if (sliceDragging && demodMode) { moveSlice(wfCv, e); e.preventDefault(); }
+}
+
+specCv.addEventListener('mousedown',  onSpecDown);
+specCv.addEventListener('mousemove',  onSpecMove);
+specCv.addEventListener('touchstart', onSpecDown, { passive: false });
+specCv.addEventListener('touchmove',  onSpecMove, { passive: false });
+wfCv.addEventListener('mousedown',  onWfDown);
+wfCv.addEventListener('mousemove',  onWfMove);
+wfCv.addEventListener('touchstart', onWfDown, { passive: false });
+wfCv.addEventListener('touchmove',  onWfMove, { passive: false });
+window.addEventListener('mouseup',  () => { sliceDragging = false; squelchDragging = false; });
+window.addEventListener('touchend', () => { sliceDragging = false; squelchDragging = false; });
+
+// Scroll wheel shifts demod slice by 1 kHz per notch when demod is active
+function onWheel(e) {
+  if (!demodMode) return;
+  e.preventDefault();
+  const step = e.deltaY > 0 ? -500 : 500;
+  demodOffsetHz = Math.max(-getSR()/2, Math.min(getSR()/2, demodOffsetHz + step));
+  document.getElementById('demod-freq').textContent = demodAbsMHz().toFixed(4) + ' MHz';
+  scheduleDemodSend();
+}
+specCv.addEventListener('wheel', onWheel, { passive: false });
+wfCv.addEventListener('wheel',   onWheel, { passive: false });
+
+// ─── Keyboard ─────────────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { closePanel(); return; }
+  if (e.key === 'Enter' && document.getElementById('panel').classList.contains('open')) {
+    if (document.activeElement.id === 'profile-name') return;
+    e.preventDefault(); // prevent Enter from also clicking the currently focused button (e.g. mute)
+    applySettings();
+  }
+});
+
+// ─── WebSocket ────────────────────────────────────────────────────────────────
+const freqDisp = document.getElementById('freq-display');
+let ws;
+
+function wsConnect() {
+  ws = new WebSocket('ws://' + window.location.hostname + ':8081');
+  ws.binaryType = 'arraybuffer';
+  ws.onopen  = () => { sendCmd({ cmd: 'get_profiles' }); };
+  ws.onclose = () => { setTimeout(wsConnect, 3000); };
+  ws.onerror = () => {};
+  ws.onmessage = ev => {
+    if (ev.data instanceof ArrayBuffer) {
+      handleBinaryFrame(ev.data);
+    } else {
+      try { const m = JSON.parse(ev.data); if (m.type === 'profiles') handleProfilesUpdate(m); }
+      catch (_) {}
+    }
+  };
+}
+wsConnect();
+updateScanModeButton(); // initialise CH button yellow on page load
+function sendCmd(obj) { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj)); }
+
+// ─── Profile UI ───────────────────────────────────────────────────────────────
+function handleProfilesUpdate(msg) {
+  profiles = msg.profiles; currentProfile = msg.current;
+  if (profiles[currentProfile]) {
+    Object.assign(liveSettings, profiles[currentProfile]);
+    syncDisplayRanges();
+    freqDisp.textContent = (profiles[currentProfile].centre_freq / 1e6).toFixed(3) + ' MHz';
+  }
+  const sel = document.getElementById('profile-sel');
+  sel.innerHTML = '';
+  Object.keys(profiles).sort().forEach(n => {
+    const o = document.createElement('option');
+    o.value = n; o.textContent = n;
+    sel.appendChild(o);
+  });
+  sel.value = currentProfile;
+  if (profiles[currentProfile]) populateForm(profiles[currentProfile]);
+  refreshMarkersList();
+  // Enable auto-save after first load so setDemod can persist mode changes
+  setTimeout(() => { autoSaveEnabled = true; }, 200);
+}
+
+function populateForm(s) {
+  document.getElementById('freq-mhz').value    = (s.centre_freq / 1e6).toFixed(3);
+  document.getElementById('sample-rate').value = String(s.sample_rate);
+  document.getElementById('gain-sel').value    = String(s.gain_tenths);
+  document.getElementById('spec-min').value    = s.spec_min_db;
+  document.getElementById('spec-max').value    = s.spec_max_db;
+  document.getElementById('wf-min').value      = s.wf_min_db;
+  document.getElementById('wf-max').value      = s.wf_max_db;
+  // Restore squelch — fall back to SPEC_MIN_DB for old profiles without squelch_db
+  squelchDb = (s.squelch_db !== undefined) ? s.squelch_db : SPEC_MIN_DB;
+  updateSqlInput();
+  // Restore demod mode — apply it only if it differs from current to avoid
+  // unnecessary audio context resets when just tweaking display settings
+  const savedMode = s.demod_mode || null;
+  if (savedMode !== demodMode) setDemod(savedMode);
+}
+
+function readForm() {
+  return {
+    centre_freq: Math.round(parseFloat(document.getElementById('freq-mhz').value) * 1e6),
+    sample_rate: parseInt(document.getElementById('sample-rate').value),
+    gain_tenths: parseInt(document.getElementById('gain-sel').value),
+    spec_min_db: parseFloat(document.getElementById('spec-min').value),
+    spec_max_db: parseFloat(document.getElementById('spec-max').value),
+    wf_min_db:   parseFloat(document.getElementById('wf-min').value),
+    wf_max_db:   parseFloat(document.getElementById('wf-max').value),
+    squelch_db:  squelchDb,
+    demod_mode:  demodMode,   // preserve last selected demod with profile
+  };
+}
+
+// Apply to live SDR — no disk write, form untouched
+function applySettings() {
+  const s = readForm();
+  Object.assign(liveSettings, s);
+  syncDisplayRanges();
+  freqDisp.textContent = (s.centre_freq / 1e6).toFixed(3) + ' MHz';
+  sendCmd({ cmd: 'apply', settings: s });
+}
+
+// Save current form to currently selected profile on disk
+function saveCurrentProfile() {
+  sendCmd({ cmd: 'save_profile', name: currentProfile, settings: readForm() });
+}
+
+// Dropdown: immediately apply selected profile to live SDR
+function selectProfile() {
+  const name = document.getElementById('profile-sel').value;
+  if (!profiles[name]) return;
+  Object.assign(liveSettings, profiles[name]);
+  syncDisplayRanges();
+  sendCmd({ cmd: 'select_profile', name });
+  if (demodMode) sendDemodCmd();
+  resetNoiseFloor(); // SR may have changed — invalidate noise floor
+}
+
+function saveAsNew() {
+  const n = document.getElementById('profile-name').value.trim();
+  if (!n) { alert('Enter a profile name first.'); return; }
+  sendCmd({ cmd: 'save_profile', name: n, settings: readForm() });
+  document.getElementById('profile-name').value = '';
+}
+
+function renameProfile() {
+  const n = document.getElementById('profile-name').value.trim();
+  if (!n) { alert('Enter the new name in the name field.'); return; }
+  sendCmd({ cmd: 'rename_profile', old_name: currentProfile, new_name: n });
+  document.getElementById('profile-name').value = '';
+}
+
+function deleteProfile() {
+  if (Object.keys(profiles).length <= 1) { alert('Cannot delete the last profile.'); return; }
+  if (!confirm('Delete profile "' + currentProfile + '"?')) return;
+  sendCmd({ cmd: 'delete_profile', name: currentProfile });
+}
+
+function openPanel() {
+  if (window.innerWidth <= 600) {
+    // On mobile the panel is always visible in split-screen below the spectrum.
+    // Just scroll its body back to top so the user sees the top of settings.
+    const pb = document.getElementById('panel-body');
+    if (pb) pb.scrollTop = 0;
+  } else {
+    document.getElementById('panel').classList.add('open');
+  }
+}
+function closePanel() { document.getElementById('panel').classList.remove('open'); }
+</script>
+</body>
+</html>
