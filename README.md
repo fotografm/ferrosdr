@@ -11,7 +11,6 @@ Other repositories port this to small machines such as the Raspberry Pi Zero 2W.
 ## Screenshots
 
 *Spectrum + waterfall with PMR446 channel markers, squelch line and demod slice*
-<img width="2270" height="2063" alt="Screenshot from 2026-03-29 14-58-27" src="https://github.com/user-attachments/assets/2a79fece-940c-4c21-9d5c-792cd7aeba84" />
 
 ---
 
