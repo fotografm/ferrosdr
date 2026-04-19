@@ -1,5 +1,5 @@
 {
-  "current": "133",
+  "current": "446",
   "profiles": {
     "131": {
       "centre_freq": 131000000,
@@ -11,7 +11,7 @@
       "wf_max_db": -20.0,
       "squelch_db": -40.0,
       "markers": [],
-      "demod_mode": null
+      "demod_mode": "AM"
     },
     "135": {
       "centre_freq": 145000000,
@@ -25,20 +25,20 @@
       "markers": [],
       "demod_mode": "NBFM"
     },
-    "434": {
-      "centre_freq": 433920000,
+    "129": {
+      "centre_freq": 129000000,
       "sample_rate": 2000000,
       "gain_tenths": 338,
-      "spec_min_db": -60.0,
-      "spec_max_db": -30.0,
-      "wf_min_db": -57.0,
-      "wf_max_db": -50.0,
-      "squelch_db": -51.0,
+      "spec_min_db": -50.0,
+      "spec_max_db": -25.0,
+      "wf_min_db": -55.0,
+      "wf_max_db": -20.0,
+      "squelch_db": -38.0,
       "markers": [],
       "demod_mode": null
     },
-    "93": {
-      "centre_freq": 93000000,
+    "95": {
+      "centre_freq": 95000000,
       "sample_rate": 2000000,
       "gain_tenths": 338,
       "spec_min_db": -50.0,
@@ -61,17 +61,89 @@
       "markers": [],
       "demod_mode": "AM"
     },
-    "446": {
-      "centre_freq": 446100000,
-      "sample_rate": 250000,
+    "934": {
+      "centre_freq": 934500000,
+      "sample_rate": 2000000,
       "gain_tenths": 338,
-      "spec_min_db": -70.0,
+      "spec_min_db": -40.0,
+      "spec_max_db": 0.0,
+      "wf_min_db": -40.0,
+      "wf_max_db": -15.0,
+      "squelch_db": -20.0,
+      "markers": [],
+      "demod_mode": "AM"
+    },
+    "145": {
+      "centre_freq": 145000000,
+      "sample_rate": 2000000,
+      "gain_tenths": 338,
+      "spec_min_db": -55.0,
       "spec_max_db": -25.0,
-      "wf_min_db": -65.0,
-      "wf_max_db": -50.0,
-      "squelch_db": -56.0,
+      "wf_min_db": -55.0,
+      "wf_max_db": -20.0,
+      "squelch_db": -41.0,
       "markers": [],
       "demod_mode": "NBFM"
+    },
+    "127": {
+      "centre_freq": 127000000,
+      "sample_rate": 2000000,
+      "gain_tenths": 338,
+      "spec_min_db": -50.0,
+      "spec_max_db": -25.0,
+      "wf_min_db": -55.0,
+      "wf_max_db": -20.0,
+      "squelch_db": -41.0,
+      "markers": [],
+      "demod_mode": "AM"
+    },
+    "1575": {
+      "centre_freq": 1575420000,
+      "sample_rate": 2000000,
+      "gain_tenths": 338,
+      "spec_min_db": -70.0,
+      "spec_max_db": -40.0,
+      "wf_min_db": -70.0,
+      "wf_max_db": -40.0,
+      "squelch_db": -70.0,
+      "markers": [],
+      "demod_mode": "AM"
+    },
+    "869.525": {
+      "centre_freq": 869525000,
+      "sample_rate": 2000000,
+      "gain_tenths": 402,
+      "spec_min_db": -67.0,
+      "spec_max_db": -40.0,
+      "wf_min_db": -65.0,
+      "wf_max_db": -50.0,
+      "squelch_db": -67.0,
+      "markers": [],
+      "demod_mode": null
+    },
+    "863": {
+      "centre_freq": 863525000,
+      "sample_rate": 2000000,
+      "gain_tenths": 338,
+      "spec_min_db": -67.0,
+      "spec_max_db": -40.0,
+      "wf_min_db": -70.0,
+      "wf_max_db": -50.0,
+      "squelch_db": -59.0,
+      "markers": [],
+      "demod_mode": "NBFM"
+    },
+    "434": {
+      "centre_freq": 433920000,
+      "sample_rate": 2000000,
+      "gain_tenths": 338,
+      "spec_min_db": -65.0,
+      "spec_max_db": -30.0,
+      "wf_min_db": -60.0,
+      "wf_max_db": -50.0,
+      "squelch_db": -51.0,
+      "markers": [],
+      "demod_mode": "AM"
     },
     "125": {
       "centre_freq": 125000000,
@@ -97,6 +169,18 @@
       "markers": [],
       "demod_mode": "WBFM"
     },
+    "93": {
+      "centre_freq": 93000000,
+      "sample_rate": 2000000,
+      "gain_tenths": 338,
+      "spec_min_db": -50.0,
+      "spec_max_db": 10.0,
+      "wf_min_db": -50.0,
+      "wf_max_db": 0.0,
+      "squelch_db": -100.0,
+      "markers": [],
+      "demod_mode": "WBFM"
+    },
     "89": {
       "centre_freq": 89000000,
       "sample_rate": 2000000,
@@ -109,77 +193,17 @@
       "markers": [],
       "demod_mode": "WBFM"
     },
-    "95": {
-      "centre_freq": 95000000,
-      "sample_rate": 2000000,
+    "446": {
+      "centre_freq": 446100000,
+      "sample_rate": 250000,
       "gain_tenths": 338,
-      "spec_min_db": -50.0,
-      "spec_max_db": 10.0,
-      "wf_min_db": -50.0,
-      "wf_max_db": 0.0,
-      "squelch_db": -100.0,
-      "markers": [],
-      "demod_mode": "WBFM"
-    },
-    "145": {
-      "centre_freq": 145000000,
-      "sample_rate": 2000000,
-      "gain_tenths": 338,
-      "spec_min_db": -55.0,
-      "spec_max_db": -25.0,
-      "wf_min_db": -55.0,
-      "wf_max_db": -20.0,
-      "squelch_db": -43.0,
+      "spec_min_db": -70.0,
+      "spec_max_db": -35.0,
+      "wf_min_db": -69.0,
+      "wf_max_db": -50.0,
+      "squelch_db": -54.0,
       "markers": [],
       "demod_mode": "NBFM"
-    },
-    "869.525": {
-      "centre_freq": 869525000,
-      "sample_rate": 2000000,
-      "gain_tenths": 402,
-      "spec_min_db": -67.0,
-      "spec_max_db": -40.0,
-      "wf_min_db": -65.0,
-      "wf_max_db": -50.0,
-      "squelch_db": -67.0,
-      "markers": [],
-      "demod_mode": null
-    },
-    "127": {
-      "centre_freq": 127000000,
-      "sample_rate": 2000000,
-      "gain_tenths": 338,
-      "spec_min_db": -50.0,
-      "spec_max_db": -25.0,
-      "wf_min_db": -55.0,
-      "wf_max_db": -20.0,
-      "squelch_db": -41.0,
-      "markers": [],
-      "demod_mode": null
-    },
-    "129": {
-      "centre_freq": 129000000,
-      "sample_rate": 2000000,
-      "gain_tenths": 338,
-      "spec_min_db": -50.0,
-      "spec_max_db": -25.0,
-      "wf_min_db": -55.0,
-      "wf_max_db": -20.0,
-      "squelch_db": -38.0,
-      "markers": [],
-      "demod_mode": null
-    },
-    "863": {
-      "centre_freq": 863525000,
-      "sample_rate": 2000000,
-      "gain_tenths": 338,
-      "spec_min_db": -67.0,
-      "spec_max_db": -40.0,
-      "wf_min_db": -70.0,
-      "wf_max_db": -50.0,
-      "squelch_db": -59.0,
-      "markers": [],
-      "demod_mode": null
     }
   }
 }
