@@ -51,7 +51,7 @@ body {
   display: flex;
   gap: 4px;
   flex: 1;
-  justify-content: center;
+  justify-content: flex-end;
   align-items: center;
 }
 .demod-btn {
@@ -76,14 +76,15 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-shrink: 0;
+  flex-shrink: 1;
+  min-width: 0;
 }
-/* Fixed width so scanning/freq text never causes buttons to shift */
 #demod-freq {
   color: #88aacc;
   font-size: 11px;
-  width: 230px;
-  flex-shrink: 0;
+  max-width: 230px;
+  min-width: 0;
+  flex-shrink: 1;
   text-align: right;
   overflow: hidden;
   white-space: nowrap;
@@ -268,7 +269,7 @@ select option { background: #0c0c1c; color: #e0e0ff; }
     display: flex;    /* slide into flow — no animation needed */
   }
   .fields-grid { grid-template-columns: 1fr; }
-  #demod-freq { width: 140px; }
+  #demod-freq { max-width: 140px; }
   #status-left { display: none; }
 }
 
