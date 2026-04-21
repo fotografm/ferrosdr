@@ -1,0 +1,4 @@
+# Disable USB autosuspend for RTL2838 dongle.
+# The kernel may suspend idle USB devices to save power; RTL-SDR sticks often
+# fail to wake cleanly and come back as a new device, breaking the open handle.
+ACTION=="add", SUBSYSTEM=="usb", ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="2838", TEST=="power/autosuspend", ATTR{power/control}="on"
