@@ -522,9 +522,14 @@ fn sdr_thread(
 ) {
     let initial = settings.lock().unwrap().clone();
 
-    let mut sdr = match RtlSdr::open(rtl_sdr_rs::DeviceId::Index(0)) {
-        Ok(s)  => s,
-        Err(e) => { eprintln!("[SDR] Cannot open device: {:?}", e); return; }
+    let mut sdr = loop {
+        match RtlSdr::open(rtl_sdr_rs::DeviceId::Index(0)) {
+            Ok(s)  => break s,
+            Err(e) => {
+                eprintln!("[SDR] Cannot open device: {:?} — retrying in 5s", e);
+                std::thread::sleep(Duration::from_secs(5));
+            }
+        }
     };
 
     sdr.set_sample_rate(initial.sample_rate).expect("[SDR] set_sample_rate");
