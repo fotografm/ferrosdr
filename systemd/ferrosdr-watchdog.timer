@@ -1,0 +1,9 @@
+[Unit]
+Description=ferrosdr USB watchdog timer
+
+[Timer]
+OnActiveSec=60
+OnUnitActiveSec=60
+
+[Install]
+WantedBy=timers.target

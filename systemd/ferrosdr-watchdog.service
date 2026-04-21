@@ -1,0 +1,7 @@
+[Unit]
+Description=ferrosdr USB watchdog
+After=ferrosdr.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c 'journalctl -u ferrosdr --since "2 minutes ago" | grep -q "NoDevice" && systemctl restart ferrosdr && echo "Restarted ferrosdr due to USB NoDevice errors" || true'

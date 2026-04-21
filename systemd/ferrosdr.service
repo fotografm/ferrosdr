@@ -1,0 +1,14 @@
+[Unit]
+Description=ferrosdr RTL-SDR web server
+After=network.target
+
+[Service]
+Type=simple
+User=user
+WorkingDirectory=/home/user
+ExecStart=/home/user/ferrosdr
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
