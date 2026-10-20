@@ -28,8 +28,9 @@ use std::time::{Duration, Instant};
 
 use futures_util::{SinkExt, StreamExt};
 use num_complex::Complex;
-use rtl_sdr_rs::{RtlSdr, TunerGain};
 use rustfft::{Fft, FftPlanner};
+use std::os::raw::{c_int, c_void};
+use std::sync::mpsc;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
@@ -37,14 +38,67 @@ use tokio::sync::broadcast;
 use tokio_tungstenite::accept_async;
 use tokio_tungstenite::tungstenite::Message;
 
+// ─── AirSpy Mini FFI ─────────────────────────────────────────────────────────
+
+#[repr(C)]
+struct AirspyDevice { _p: [u8; 0] }
+
+#[repr(C)]
+struct AirspyTransfer {
+    device:          *mut AirspyDevice,
+    ctx:             *mut c_void,
+    samples:         *mut c_void,
+    sample_count:    c_int,
+    dropped_samples: u64,
+    sample_type:     c_int,
+}
+
+const AIRSPY_SAMPLE_INT16_IQ: c_int = 2;
+
+#[link(name = "airspy")]
+extern "C" {
+    fn airspy_open(device: *mut *mut AirspyDevice) -> c_int;
+    fn airspy_close(device: *mut AirspyDevice) -> c_int;
+    fn airspy_set_samplerate(device: *mut AirspyDevice, samplerate: u32) -> c_int;
+    fn airspy_set_freq(device: *mut AirspyDevice, freq_hz: u32) -> c_int;
+    fn airspy_set_sensitivity_gain(device: *mut AirspyDevice, value: u8) -> c_int;
+    fn airspy_set_sample_type(device: *mut AirspyDevice, sample_type: c_int) -> c_int;
+    fn airspy_start_rx(
+        device:   *mut AirspyDevice,
+        callback: unsafe extern "C" fn(*mut AirspyTransfer) -> c_int,
+        rx_ctx:   *mut c_void,
+    ) -> c_int;
+    fn airspy_stop_rx(device: *mut AirspyDevice) -> c_int;
+}
+
+// Runs on AirSpy library's internal thread. Converts int16 IQ to RTL-SDR-compatible
+// uint8 (centre 128) and sends each chunk via the bounded channel.
+unsafe extern "C" fn airspy_rx_callback(transfer: *mut AirspyTransfer) -> c_int {
+    let t       = &*transfer;
+    let tx      = &*(t.ctx as *const mpsc::SyncSender<Vec<u8>>);
+    let n       = t.sample_count as usize;   // complex IQ pairs
+    let samples = t.samples as *const i16;
+    let mut buf = Vec::with_capacity(n * 2);
+    for i in 0..(n * 2) {
+        // 12-bit signed (-2048..2047) → uint8 centred at 128
+        buf.push((((*samples.add(i)) >> 4) + 128).clamp(0, 255) as u8);
+    }
+    let _ = tx.try_send(buf);
+    0
+}
+
+fn snap_sample_rate(r: u32) -> u32 {
+    if r > 4_500_000 { 6_000_000 } else { 3_000_000 }
+}
+
 // ─── Spectrum constants ───────────────────────────────────────────────────────
 
 const FFT_SIZE: usize       = 2048;
 const FFT_AVERAGES: usize   = 10;   // must keep buf divisible by all decimation chains:
                                      // 20480/5=4096/8=512 (WBFM), 20480/8=2560/5=512 (NBFM)
 const OUTPUT_BINS: usize    = 1024;
-const HTTP_PORT: u16        = 8080;
-const WS_PORT: u16          = 8081;
+const HTTP_PORT: u16        = 8073;
+const WS_PORT: u16          = 8074;
 const BROADCAST_CAP: usize  = 16;
 const SEND_INTERVAL_MS: u64 = 40;
 const PROFILES_PATH: &str   = "./profiles.json";
@@ -92,8 +146,8 @@ impl Default for Settings {
     fn default() -> Self {
         Settings {
             centre_freq: 869_525_000,
-            sample_rate: 2_000_000,
-            gain_tenths: 338,
+            sample_rate: 3_000_000,
+            gain_tenths: 14,   // AirSpy Mini sensitivity gain 0–21
             spec_min_db: -70.0,
             spec_max_db: -40.0,
             wf_min_db:   -80.0,
@@ -520,112 +574,149 @@ fn sdr_thread(
     demod:    Arc<Mutex<DemodConfig>>,
     frame_tx: Arc<broadcast::Sender<Vec<u8>>>,
 ) {
-    let initial = settings.lock().unwrap().clone();
+    let buf_len = FFT_SIZE * FFT_AVERAGES * 2;
 
-    let mut sdr = loop {
-        match RtlSdr::open(rtl_sdr_rs::DeviceId::Index(0)) {
-            Ok(s)  => break s,
-            Err(e) => {
-                eprintln!("[SDR] Cannot open device: {:?} — retrying in 5s", e);
-                std::thread::sleep(Duration::from_secs(5));
-            }
-        }
-    };
-
-    sdr.set_sample_rate(initial.sample_rate).expect("[SDR] set_sample_rate");
-    sdr.set_center_freq(initial.centre_freq).expect("[SDR] set_center_freq");
-    sdr.set_tuner_gain(TunerGain::Manual(initial.gain_tenths)).expect("[SDR] set_tuner_gain");
-    sdr.reset_buffer().expect("[SDR] reset_buffer");
-
-    println!(
-        "[SDR] Ready — {:.3} MHz  {:.3} MSPS  {:.1} dB",
-        initial.centre_freq as f64 / 1e6,
-        initial.sample_rate as f64 / 1e6,
-        initial.gain_tenths as f32 / 10.0,
-    );
-
-    let mut planner  = FftPlanner::<f32>::new();
-    let fft          = planner.plan_fft_forward(FFT_SIZE);
-    let mut scratch  = vec![Complex::new(0f32, 0f32); fft.get_inplace_scratch_len()];
-    let window       = make_hann_window(FFT_SIZE);
-
-    let buf_len      = FFT_SIZE * FFT_AVERAGES * 2;
-    let mut buf      = vec![0u8; buf_len];
-    let mut last_applied = initial;
-    let mut last_send         = Instant::now();
-    let mut demod_run         = DemodRun::default();
-    let mut squelch_open_cache = true; // updated from spectrum bins every 40ms
+    let mut planner = FftPlanner::<f32>::new();
+    let fft         = planner.plan_fft_forward(FFT_SIZE);
+    let mut scratch = vec![Complex::new(0f32, 0f32); fft.get_inplace_scratch_len()];
+    let window      = make_hann_window(FFT_SIZE);
 
     loop {
-        if let Err(e) = sdr.read_sync(&mut buf) {
-            eprintln!("[SDR] Read error: {:?}", e);
-            std::thread::sleep(Duration::from_millis(100));
-            continue;
+        let initial = settings.lock().unwrap().clone();
+
+        // Open AirSpy Mini — retry until available
+        let mut dev: *mut AirspyDevice = std::ptr::null_mut();
+        loop {
+            let rc = unsafe { airspy_open(&mut dev) };
+            if rc == 0 { break; }
+            eprintln!("[SDR] Cannot open AirSpy device (err {}) — retrying in 5s", rc);
+            std::thread::sleep(Duration::from_secs(5));
         }
 
-        // Apply settings changes
-        let current = settings.lock().unwrap().clone();
-        if current.centre_freq != last_applied.centre_freq {
-            let _ = sdr.set_center_freq(current.centre_freq);
-            println!("[SDR] Freq → {:.3} MHz", current.centre_freq as f64 / 1e6);
-        }
-        if current.gain_tenths != last_applied.gain_tenths {
-            let _ = sdr.set_tuner_gain(TunerGain::Manual(current.gain_tenths));
-            println!("[SDR] Gain → {:.1} dB", current.gain_tenths as f32 / 10.0);
-        }
-        if current.sample_rate != last_applied.sample_rate {
-            let _ = sdr.set_sample_rate(current.sample_rate);
-            println!("[SDR] Rate → {:.3} MSPS", current.sample_rate as f64 / 1e6);
-        }
-        last_applied = current.clone();
+        let sample_rate = snap_sample_rate(initial.sample_rate);
+        let gain        = initial.gain_tenths.max(0).min(21) as u8;
 
-        // Spectrum at 25 fps + squelch measurement from spectrum bins
-        let now = Instant::now();
-        let demod_cfg = demod.lock().unwrap().clone();
+        // Channel bridges the C callback thread to this processing thread
+        let (buf_tx, buf_rx) = mpsc::sync_channel::<Vec<u8>>(8);
+        let ctx_ptr: *mut c_void = Box::into_raw(Box::new(buf_tx)) as *mut _;
 
-        if now.duration_since(last_send) >= Duration::from_millis(SEND_INTERVAL_MS) {
-            last_send = now;
-            let spec  = compute_spectrum(&buf, &fft, &mut scratch, &window);
-            let ds    = downsample(&spec);
-            let frame = encode_spectrum_frame(&ds, &current);
-            let _ = frame_tx.send(frame);
+        unsafe {
+            airspy_set_sample_type(dev, AIRSPY_SAMPLE_INT16_IQ);
+            airspy_set_samplerate(dev, sample_rate);
+            airspy_set_freq(dev, initial.centre_freq);
+            airspy_set_sensitivity_gain(dev, gain);
+            airspy_start_rx(dev, airspy_rx_callback, ctx_ptr);
+        }
 
-            // Compute squelch from spectrum bins — perfectly calibrated to the display scale.
-            // Find the OUTPUT_BINS bin that corresponds to the demod slice centre frequency,
-            // then take the peak power over the channel bandwidth window.
-            let channel_bw_hz = match demod_cfg.mode.as_ref() {
-                Some(DemodMode::NBFM) => 12_500.0f32,
-                Some(DemodMode::AM)   => 10_000.0f32,
-                _                     => 0.0f32,
-            };
-            if channel_bw_hz > 0.0 {
-                let bin_width_hz  = current.sample_rate as f32 / OUTPUT_BINS as f32;
-                let half_bins     = ((channel_bw_hz / 2.0 / bin_width_hz) as usize).max(1);
-                let center        = ((demod_cfg.offset_hz / current.sample_rate as f32 + 0.5)
-                                    * OUTPUT_BINS as f32).clamp(0.0, (OUTPUT_BINS-1) as f32) as usize;
-                let lo            = center.saturating_sub(half_bins);
-                let hi            = (center + half_bins).min(OUTPUT_BINS - 1);
-                // Peak dBFS in the channel window — matches what the user sees on the spectrum
-                let peak_db       = ds[lo..=hi].iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-                squelch_open_cache = peak_db >= demod_cfg.squelch_db;
-            } else {
-                squelch_open_cache = true; // WBFM or OFF: always open
+        // Reflect the actual (snapped) rate back into shared settings so clients
+        // get the correct frequency scale when they request profiles.
+        {
+            let mut s = settings.lock().unwrap();
+            if s.sample_rate != sample_rate { s.sample_rate = sample_rate; }
+        }
+
+        println!(
+            "[SDR] AirSpy Mini ready — {:.3} MHz  {} MSPS  sens {}",
+            initial.centre_freq as f64 / 1e6,
+            sample_rate / 1_000_000,
+            gain,
+        );
+
+        let mut accum: std::collections::VecDeque<u8> =
+            std::collections::VecDeque::with_capacity(buf_len * 8);
+        let mut last_applied       = Settings { sample_rate, ..initial };
+        let mut last_send          = Instant::now();
+        let mut demod_run          = DemodRun::default();
+        let mut squelch_open_cache = true;
+
+        'stream: loop {
+            match buf_rx.recv_timeout(Duration::from_secs(5)) {
+                Ok(chunk) => accum.extend(chunk.iter()),
+                Err(_) => {
+                    eprintln!("[SDR] No data from AirSpy — reopening device");
+                    break 'stream;
+                }
+            }
+
+            // Apply any pending settings changes
+            let current      = settings.lock().unwrap().clone();
+            let current_rate = snap_sample_rate(current.sample_rate);
+            if current.centre_freq != last_applied.centre_freq {
+                unsafe { airspy_set_freq(dev, current.centre_freq); }
+                println!("[SDR] Freq → {:.3} MHz", current.centre_freq as f64 / 1e6);
+            }
+            if current.gain_tenths != last_applied.gain_tenths {
+                let g = current.gain_tenths.max(0).min(21) as u8;
+                unsafe { airspy_set_sensitivity_gain(dev, g); }
+                println!("[SDR] Sens → {}", g);
+            }
+            if current_rate != last_applied.sample_rate {
+                unsafe {
+                    airspy_stop_rx(dev);
+                    airspy_set_samplerate(dev, current_rate);
+                    airspy_start_rx(dev, airspy_rx_callback, ctx_ptr);
+                }
+                accum.clear();
+                settings.lock().unwrap().sample_rate = current_rate;
+                println!("[SDR] Rate → {} MSPS", current_rate / 1_000_000);
+            }
+            last_applied = Settings { sample_rate: current_rate, ..current.clone() };
+
+            // Process complete FFT batches from the accumulation buffer
+            while accum.len() >= buf_len {
+                let buf: Vec<u8> = accum.drain(..buf_len).collect();
+
+                let now       = Instant::now();
+                let demod_cfg = demod.lock().unwrap().clone();
+
+                if now.duration_since(last_send) >= Duration::from_millis(SEND_INTERVAL_MS) {
+                    last_send = now;
+                    let spec  = compute_spectrum(&buf, &fft, &mut scratch, &window);
+                    let ds    = downsample(&spec);
+                    let frame = encode_spectrum_frame(&ds, &current);
+                    let _     = frame_tx.send(frame);
+
+                    let channel_bw_hz = match demod_cfg.mode.as_ref() {
+                        Some(DemodMode::NBFM) => 12_500.0f32,
+                        Some(DemodMode::AM)   => 10_000.0f32,
+                        _                     => 0.0f32,
+                    };
+                    if channel_bw_hz > 0.0 {
+                        let bin_width_hz = current_rate as f32 / OUTPUT_BINS as f32;
+                        let half_bins    = ((channel_bw_hz / 2.0 / bin_width_hz) as usize).max(1);
+                        let center       = ((demod_cfg.offset_hz / current_rate as f32 + 0.5)
+                                           * OUTPUT_BINS as f32).clamp(0.0, (OUTPUT_BINS-1) as f32) as usize;
+                        let lo           = center.saturating_sub(half_bins);
+                        let hi           = (center + half_bins).min(OUTPUT_BINS - 1);
+                        let peak_db      = ds[lo..=hi].iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+                        squelch_open_cache = peak_db >= demod_cfg.squelch_db;
+                    } else {
+                        squelch_open_cache = true;
+                    }
+                }
+
+                if demod_cfg.mode != demod_run.prev_mode || current_rate != demod_run.prev_sr {
+                    let saved_peak     = demod_run.agc_peak;
+                    demod_run          = DemodRun::default();
+                    demod_run.agc_peak = saved_peak;
+                    demod_run.prev_mode = demod_cfg.mode.clone();
+                    demod_run.prev_sr   = current_rate;
+                }
+                if let Some(audio_frame) = process_audio(
+                    &buf, &demod_cfg, &mut demod_run, current_rate, squelch_open_cache,
+                ) {
+                    let _ = frame_tx.send(audio_frame);
+                }
             }
         }
 
-        // Audio demodulation — every read cycle (~8 ms)
-        // Reset demod state on mode or sample rate change
-        if demod_cfg.mode != demod_run.prev_mode || current.sample_rate != demod_run.prev_sr {
-            let saved_peak       = demod_run.agc_peak;
-            demod_run            = DemodRun::default();
-            demod_run.agc_peak   = saved_peak;
-            demod_run.prev_mode  = demod_cfg.mode.clone();
-            demod_run.prev_sr    = current.sample_rate;
+        unsafe {
+            airspy_stop_rx(dev);
+            airspy_close(dev);
+            // Recover and drop the SyncSender — safe after stop_rx guarantees no more callbacks
+            drop(Box::from_raw(ctx_ptr as *mut mpsc::SyncSender<Vec<u8>>));
         }
-        if let Some(audio_frame) = process_audio(&buf, &demod_cfg, &mut demod_run,
-                                                  current.sample_rate, squelch_open_cache) {
-            let _ = frame_tx.send(audio_frame);
-        }
+        std::thread::sleep(Duration::from_secs(2));
     }
 }
 

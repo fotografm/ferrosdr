@@ -514,48 +514,35 @@ select option { background: #0c0c1c; color: #e0e0ff; }
         <div class="field">
           <label>Sample Rate</label>
           <select id="sample-rate">
-            <option value="250000">0.25 MSPS</option>
-            <option value="1000000">1.0 MSPS</option>
-            <option value="1024000">1.024 MSPS</option>
-            <option value="1536000">1.536 MSPS</option>
-            <option value="2000000">2.0 MSPS</option>
-            <option value="2048000">2.048 MSPS</option>
-            <option value="2400000">2.4 MSPS</option>
-            <option value="2800000">2.8 MSPS</option>
+            <option value="3000000">3.0 MSPS</option>
+            <option value="6000000">6.0 MSPS</option>
           </select>
         </div>
         <div class="field" style="grid-column: 1 / -1;">
-          <label>Tuner Gain</label>
+          <label>Sensitivity Gain (AirSpy Mini 0–21)</label>
           <select id="gain-sel">
-            <option value="0">0.0 dB</option>
-            <option value="9">0.9 dB</option>
-            <option value="14">1.4 dB</option>
-            <option value="27">2.7 dB</option>
-            <option value="37">3.7 dB</option>
-            <option value="77">7.7 dB</option>
-            <option value="87">8.7 dB</option>
-            <option value="125">12.5 dB</option>
-            <option value="144">14.4 dB</option>
-            <option value="157">15.7 dB</option>
-            <option value="166">16.6 dB</option>
-            <option value="197">19.7 dB</option>
-            <option value="207">20.7 dB</option>
-            <option value="229">22.9 dB</option>
-            <option value="254">25.4 dB</option>
-            <option value="280">28.0 dB</option>
-            <option value="297">29.7 dB</option>
-            <option value="328">32.8 dB</option>
-            <option value="338">33.8 dB</option>
-            <option value="364">36.4 dB</option>
-            <option value="372">37.2 dB</option>
-            <option value="386">38.6 dB</option>
-            <option value="402">40.2 dB</option>
-            <option value="421">42.1 dB</option>
-            <option value="434">43.4 dB</option>
-            <option value="439">43.9 dB</option>
-            <option value="445">44.5 dB</option>
-            <option value="480">48.0 dB</option>
-            <option value="496">49.6 dB</option>
+            <option value="0">0 — minimum</option>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+            <option value="6">6</option>
+            <option value="7">7</option>
+            <option value="8">8</option>
+            <option value="9">9</option>
+            <option value="10">10</option>
+            <option value="11">11</option>
+            <option value="12">12</option>
+            <option value="13">13</option>
+            <option value="14">14</option>
+            <option value="15">15</option>
+            <option value="16">16</option>
+            <option value="17">17</option>
+            <option value="18">18</option>
+            <option value="19">19</option>
+            <option value="20">20</option>
+            <option value="21">21 — maximum</option>
           </select>
         </div>
       </div>
@@ -1397,7 +1384,7 @@ const freqDisp = document.getElementById('freq-display');
 let ws;
 
 function wsConnect() {
-  ws = new WebSocket('ws://' + window.location.hostname + ':8081');
+  ws = new WebSocket('ws://' + window.location.hostname + ':8074');
   ws.binaryType = 'arraybuffer';
   ws.onopen  = () => { sendCmd({ cmd: 'get_profiles' }); };
   ws.onclose = () => { setTimeout(wsConnect, 3000); };
@@ -1420,6 +1407,8 @@ function handleProfilesUpdate(msg) {
   profiles = msg.profiles; currentProfile = msg.current;
   if (profiles[currentProfile]) {
     Object.assign(liveSettings, profiles[currentProfile]);
+    // Ensure frequency scale uses a valid AirSpy rate even for old RTL-SDR profiles
+    liveSettings.sample_rate = liveSettings.sample_rate > 4500000 ? 6000000 : 3000000;
     syncDisplayRanges();
     freqDisp.textContent = (profiles[currentProfile].centre_freq / 1e6).toFixed(3) + ' MHz';
   }
@@ -1439,8 +1428,12 @@ function handleProfilesUpdate(msg) {
 
 function populateForm(s) {
   document.getElementById('freq-mhz').value    = (s.centre_freq / 1e6).toFixed(3);
-  document.getElementById('sample-rate').value = String(s.sample_rate);
-  document.getElementById('gain-sel').value    = String(s.gain_tenths);
+  // Snap to AirSpy Mini valid rates; old RTL-SDR profiles store rates like 2000000
+  const validRate = s.sample_rate > 4500000 ? 6000000 : 3000000;
+  document.getElementById('sample-rate').value = String(validRate);
+  // Clamp gain to AirSpy Mini sensitivity range 0–21
+  const validGain = Math.max(0, Math.min(21, s.gain_tenths || 14));
+  document.getElementById('gain-sel').value    = String(validGain);
   document.getElementById('spec-min').value    = s.spec_min_db;
   document.getElementById('spec-max').value    = s.spec_max_db;
   document.getElementById('wf-min').value      = s.wf_min_db;
